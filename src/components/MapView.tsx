@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Carpark, SearchLocation } from '../types';
 import { getAvailabilityColor, formatDistance } from '../data/singaporeCarparks';
 import { Layers, Navigation, ZoomIn, ZoomOut, Compass, ExternalLink, Sparkles } from 'lucide-react';
@@ -17,17 +18,17 @@ type TileStyle = 'dark' | 'voyager' | 'osm';
 
 const TILE_CONFIGS: Record<TileStyle, { url: string; attribution: string; name: string }> = {
   dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
     name: 'Dark Night',
   },
   voyager: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
     name: 'Light Map',
   },
   osm: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; OpenStreetMap contributors',
     name: 'Street Standard',
   },
@@ -52,12 +53,20 @@ export const MapView: React.FC<MapViewProps> = ({
 
   // Initialize Map
   useEffect(() => {
-    if (!mapContainerRef.current || mapInstanceRef.current) return;
+    if (!mapContainerRef.current) return;
+
+    // Reset any previously assigned Leaflet ID to avoid initialization collision
+    const container = mapContainerRef.current as any;
+    if (container._leaflet_id) {
+      delete container._leaflet_id;
+    }
 
     const initialMap = L.map(mapContainerRef.current, {
       center: [activeLocation.coordinates.lat, activeLocation.coordinates.lng],
       zoom: 15,
       zoomControl: false,
+      fadeAnimation: true,
+      trackResize: true,
     });
 
     const initialTile = L.tileLayer(TILE_CONFIGS[tileStyle].url, {
@@ -74,7 +83,33 @@ export const MapView: React.FC<MapViewProps> = ({
 
     mapInstanceRef.current = initialMap;
 
+    // Invalidate size on multiple ticks to guarantee tiles render when flex dimensions settle
+    const forceResize = () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+      }
+    };
+
+    forceResize();
+    const t1 = setTimeout(forceResize, 100);
+    const t2 = setTimeout(forceResize, 350);
+    const t3 = setTimeout(forceResize, 800);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        forceResize();
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       initialMap.remove();
       mapInstanceRef.current = null;
     };
@@ -83,9 +118,49 @@ export const MapView: React.FC<MapViewProps> = ({
   // Handle Tile Style changes
   useEffect(() => {
     if (!mapInstanceRef.current || !tileLayerRef.current) return;
-
     tileLayerRef.current.setUrl(TILE_CONFIGS[tileStyle].url);
   }, [tileStyle]);
+
+  // Safe viewport bounds fitting
+  const fitViewToLocations = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    map.invalidateSize();
+    const size = map.getSize();
+
+    // If container size is not computed yet, delay
+    if (size.x <= 0 || size.y <= 0) {
+      setTimeout(fitViewToLocations, 150);
+      return;
+    }
+
+    const { lat, lng } = activeLocation.coordinates;
+    if (carparks.length > 0) {
+      const validPoints: [number, number][] = [
+        [lat, lng],
+        ...carparks
+          .filter((cp) => cp?.coordinates && typeof cp.coordinates.lat === 'number' && typeof cp.coordinates.lng === 'number')
+          .map((cp) => [cp.coordinates.lat, cp.coordinates.lng] as [number, number]),
+      ];
+
+      const bounds = L.latLngBounds(validPoints);
+      if (bounds.isValid()) {
+        try {
+          map.fitBounds(bounds, {
+            padding: [50, 50],
+            maxZoom: 16,
+            animate: true,
+          });
+          return;
+        } catch (err) {
+          console.warn('fitBounds fallback:', err);
+        }
+      }
+    }
+
+    map.setView([lat, lng], 15);
+  }, [activeLocation, carparks]);
 
   // Update Search Location Marker & Radius & Fit Bounds
   useEffect(() => {
@@ -102,8 +177,8 @@ export const MapView: React.FC<MapViewProps> = ({
       className: 'search-location-pin',
       html: `
         <div class="relative flex items-center justify-center">
-          <div class="absolute w-8 h-8 rounded-full bg-cyan-400/20 animate-ping"></div>
-          <div class="relative w-7 h-7 rounded-full bg-cyan-500 border-2 border-white shadow-lg flex items-center justify-center text-white">
+          <div class="absolute w-8 h-8 rounded-full bg-cyan-400/25 animate-ping"></div>
+          <div class="relative w-7 h-7 rounded-full bg-cyan-500 border-2 border-white shadow-lg flex items-center justify-center text-white font-bold text-xs">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
               <circle cx="12" cy="12" r="5" />
             </svg>
@@ -115,7 +190,7 @@ export const MapView: React.FC<MapViewProps> = ({
     });
 
     const searchMarker = L.marker([lat, lng], { icon: searchIcon }).bindTooltip(
-      `<strong>Searched Area:</strong> ${activeLocation.name}`,
+      `<strong>Searched Location:</strong> ${activeLocation.name}`,
       { direction: 'top', offset: [0, -12], className: 'custom-tooltip' }
     );
     searchLayer.addLayer(searchMarker);
@@ -132,23 +207,13 @@ export const MapView: React.FC<MapViewProps> = ({
     });
     searchLayer.addLayer(radiusCircle);
 
-    // If carparks are available, fit bounds to show both search center and all car parks neatly
-    if (carparks.length > 0) {
-      const allPoints: [number, number][] = [
-        [lat, lng],
-        ...carparks.map((cp) => [cp.coordinates.lat, cp.coordinates.lng] as [number, number]),
-      ];
-      const bounds = L.latLngBounds(allPoints);
-      map.fitBounds(bounds, {
-        padding: [60, 60],
-        maxZoom: 16,
-        animate: true,
-        duration: 0.8,
-      });
-    } else {
-      map.flyTo([lat, lng], 15, { animate: true, duration: 1 });
-    }
-  }, [activeLocation, carparks]);
+    // Trigger viewport adjustment
+    const timer = setTimeout(() => {
+      fitViewToLocations();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [activeLocation, carparks, fitViewToLocations]);
 
   // Update Carpark Markers
   useEffect(() => {
@@ -202,7 +267,6 @@ export const MapView: React.FC<MapViewProps> = ({
         { direction: 'top', offset: [0, -20] }
       );
 
-      // Marker click handler
       marker.on('click', () => {
         onSelectCarpark(cp);
       });
@@ -224,21 +288,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
   // Map Controls
   const handleRecenter = () => {
-    if (!mapInstanceRef.current) return;
-    if (carparks.length > 0) {
-      const allPoints: [number, number][] = [
-        [activeLocation.coordinates.lat, activeLocation.coordinates.lng],
-        ...carparks.map((cp) => [cp.coordinates.lat, cp.coordinates.lng] as [number, number]),
-      ];
-      const bounds = L.latLngBounds(allPoints);
-      mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
-    } else {
-      mapInstanceRef.current.flyTo(
-        [activeLocation.coordinates.lat, activeLocation.coordinates.lng],
-        15,
-        { animate: true }
-      );
-    }
+    fitViewToLocations();
   };
 
   const handleZoomIn = () => {
@@ -252,9 +302,14 @@ export const MapView: React.FC<MapViewProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[400px] flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
-      {/* Map Container */}
-      <div id="sg-carpark-leaflet-map" ref={mapContainerRef} className="w-full h-full z-0" />
+    <div className="relative w-full h-full min-h-[500px] flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
+      {/* Map Container - absolute inset-0 guarantees full coverage and non-zero dimensions */}
+      <div
+        id="sg-carpark-leaflet-map"
+        ref={mapContainerRef}
+        className="absolute inset-0 w-full h-full z-0"
+        style={{ width: '100%', height: '100%', minHeight: '500px' }}
+      />
 
       {/* Floating Map Controls */}
       <div className="absolute right-3 top-3 z-20 flex flex-col gap-2">
@@ -263,19 +318,19 @@ export const MapView: React.FC<MapViewProps> = ({
           id="btn-map-recenter"
           type="button"
           onClick={handleRecenter}
-          className="p-2.5 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-slate-200 hover:text-white shadow-lg backdrop-blur-md transition-all"
+          className="p-2.5 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-slate-200 hover:text-white shadow-lg backdrop-blur-md transition-all cursor-pointer"
           title="Recenter on searched area"
         >
           <Navigation className="w-4 h-4 text-cyan-400" />
         </button>
 
         {/* Zoom In & Out */}
-        <div className="flex flex-col bg-slate-900/90 border border-slate-700/80 rounded-xl shadow-lg backdrop-blur-md overflow-hidden">
+        <div className="flex flex-col bg-slate-900/95 border border-slate-700/80 rounded-xl shadow-lg backdrop-blur-md overflow-hidden">
           <button
             id="btn-map-zoom-in"
             type="button"
             onClick={handleZoomIn}
-            className="p-2.5 text-slate-200 hover:text-white hover:bg-slate-800 border-b border-slate-800 transition-colors"
+            className="p-2.5 text-slate-200 hover:text-white hover:bg-slate-800 border-b border-slate-800 transition-colors cursor-pointer"
             title="Zoom In"
           >
             <ZoomIn className="w-4 h-4" />
@@ -284,7 +339,7 @@ export const MapView: React.FC<MapViewProps> = ({
             id="btn-map-zoom-out"
             type="button"
             onClick={handleZoomOut}
-            className="p-2.5 text-slate-200 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-2.5 text-slate-200 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
             title="Zoom Out"
           >
             <ZoomOut className="w-4 h-4" />
@@ -297,7 +352,7 @@ export const MapView: React.FC<MapViewProps> = ({
             id="btn-map-style-toggle"
             type="button"
             onClick={() => setShowTileMenu(!showTileMenu)}
-            className="p-2.5 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-slate-200 hover:text-white shadow-lg backdrop-blur-md transition-all"
+            className="p-2.5 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-slate-200 hover:text-white shadow-lg backdrop-blur-md transition-all cursor-pointer"
             title="Switch Map Theme"
           >
             <Layers className="w-4 h-4 text-emerald-400" />
@@ -361,7 +416,7 @@ export const MapView: React.FC<MapViewProps> = ({
                     key={cp.id}
                     type="button"
                     onClick={() => onSelectCarpark(cp)}
-                    className={`px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 transition-all whitespace-nowrap ${
+                    className={`px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
                       isSel
                         ? 'bg-emerald-500 text-slate-950 font-extrabold shadow-md scale-105'
                         : 'bg-slate-800/80 hover:bg-slate-800 text-slate-200 border border-slate-700/50'
@@ -395,76 +450,64 @@ export const MapView: React.FC<MapViewProps> = ({
         <div className="absolute bottom-3 left-3 right-3 sm:left-auto sm:right-3 sm:w-96 z-20">
           <div className="bg-slate-900/95 border border-slate-700/90 rounded-2xl p-3.5 shadow-2xl backdrop-blur-md">
             <div className="flex items-start justify-between gap-2">
-              <div>
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-1">
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                    {selectedCarpark.agency}
-                  </span>
-                  <span className="text-xs text-slate-400 font-mono">
-                    {selectedCarpark.carparkNumber}
-                  </span>
-                  {selectedCarpark.distanceMeters !== undefined && (
-                    <span className="text-xs font-semibold text-cyan-400">
-                      &bull; {formatDistance(selectedCarpark.distanceMeters)} away
+                  {selectedCarpark.rank && (
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-400 text-slate-950 font-black text-[10px]">
+                      #{selectedCarpark.rank} Nearest
                     </span>
                   )}
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                    {selectedCarpark.agency} &bull; {selectedCarpark.area}
+                  </span>
                 </div>
-                <h4 className="text-sm font-bold text-white line-clamp-1">
-                  {selectedCarpark.name}
-                </h4>
-                <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">
-                  {selectedCarpark.address}
-                </p>
+                <h4 className="text-sm font-bold text-white truncate">{selectedCarpark.name}</h4>
+                <p className="text-xs text-slate-400 truncate mt-0.5">{selectedCarpark.address}</p>
               </div>
 
-              {/* Lot availability badge */}
-              {(() => {
-                const color = getAvailabilityColor(
-                  selectedCarpark.availableLots,
-                  selectedCarpark.occupancyRate
-                );
-                return (
-                  <div className={`px-2.5 py-1 rounded-xl text-center flex-shrink-0 ${color.badgeBg}`}>
-                    <div className="text-base font-extrabold leading-none">
-                      {selectedCarpark.availableLots}
-                    </div>
-                    <div className="text-[9px] uppercase font-bold mt-0.5">Available</div>
-                  </div>
-                );
-              })()}
+              <button
+                type="button"
+                onClick={() => onSelectCarpark(null as any)}
+                className="text-slate-400 hover:text-white text-xs p-1"
+                title="Dismiss preview"
+              >
+                &times;
+              </button>
             </div>
 
-            {/* Quick Rates & Action row */}
-            <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
-              <div className="text-xs text-slate-300">
-                <span className="font-semibold text-slate-100">
-                  {selectedCarpark.rateInfo.per30MinRate
-                    ? `$${selectedCarpark.rateInfo.per30MinRate.toFixed(2)}/30m`
-                    : 'Standard Rate'}
-                </span>
-                <span className="text-slate-400 text-[11px] ml-1.5">
-                  (Grace: {selectedCarpark.rateInfo.gracePeriod})
-                </span>
+            <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-800 text-center">
+              <div className="bg-slate-800/60 rounded-xl p-1.5">
+                <div className="text-[10px] text-slate-400">Available</div>
+                <div className="text-sm font-extrabold text-emerald-400">
+                  {selectedCarpark.availableLots}
+                </div>
               </div>
+              <div className="bg-slate-800/60 rounded-xl p-1.5">
+                <div className="text-[10px] text-slate-400">Total Lots</div>
+                <div className="text-sm font-bold text-slate-200">
+                  {selectedCarpark.totalLots}
+                </div>
+              </div>
+              <div className="bg-slate-800/60 rounded-xl p-1.5">
+                <div className="text-[10px] text-slate-400">Est. Distance</div>
+                <div className="text-sm font-bold text-cyan-400">
+                  {formatDistance(selectedCarpark.distanceMeters ?? 0)}
+                </div>
+              </div>
+            </div>
 
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => onOpenDetails(selectedCarpark)}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-colors"
-                >
-                  View Details
-                </button>
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${selectedCarpark.coordinates.lat},${selectedCarpark.coordinates.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                  title="Open Google Maps Navigation"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+            <div className="flex items-center justify-between gap-2 mt-3 pt-2">
+              <div className="text-[11px] text-slate-300 font-medium truncate">
+                Rate: <span className="text-emerald-400 font-semibold">{selectedCarpark.rateInfo.weekdayRate.split(',')[0]}</span>
               </div>
+              <button
+                type="button"
+                onClick={() => onOpenDetails(selectedCarpark)}
+                className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1 transition-colors flex-shrink-0 cursor-pointer"
+              >
+                <span>View Details</span>
+                <ExternalLink className="w-3 h-3" />
+              </button>
             </div>
           </div>
         </div>

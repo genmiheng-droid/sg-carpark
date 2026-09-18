@@ -2,8 +2,23 @@
 
 /* Leaflet Overrides & Custom Map Styling */
 .leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 480px !important;
   background-color: #020617 !important;
   font-family: inherit;
+  z-index: 10;
+}
+
+#sg-carpark-leaflet-map {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 480px !important;
+  display: block !important;
+}
+
+.leaflet-tile-pane {
+  filter: brightness(0.95) contrast(1.05);
 }
 
 .custom-carpark-pin {

@@ -395,7 +395,7 @@ export default function App() {
 
         {/* TAB 1: MAP VIEW (Interactive Map + Split / Expandable List) */}
         {activeTab === 'map' && (
-          <div className="flex-1 flex flex-col lg:flex-row gap-4 h-[calc(100vh-190px)] min-h-[500px]">
+          <div className="flex-1 flex flex-col lg:flex-row gap-4 h-[calc(100vh-200px)] min-h-[550px]">
             {/* Desktop Side List (Hidden on mobile to prioritize clean map, visible on lg screens) */}
             <div className="hidden lg:flex flex-col w-[380px] h-full bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3 overflow-hidden">
               <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
@@ -407,14 +407,14 @@ export default function App() {
                   )}
                   <span>
                     {retrievalMode === 'top5'
-                      ? `5 Nearest (>10 Lots)`
+                      ? `5 Nearest (>5 Lots)`
                       : `Nearby Parking (${displayedCarparks.length})`}
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setRetrievalMode(retrievalMode === 'top5' ? 'all' : 'top5')}
-                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold transition-colors"
+                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold transition-colors cursor-pointer"
                 >
                   {retrievalMode === 'top5' ? 'Show All Lots' : 'Show 5 Nearest'}
                 </button>
@@ -457,7 +457,7 @@ export default function App() {
             </div>
 
             {/* Interactive Leaflet Map */}
-            <div className="flex-1 h-full relative rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+            <div className="flex-1 flex flex-col h-full min-h-[520px] relative rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
               <MapView
                 carparks={displayedCarparks}
                 activeLocation={activeLocation}
@@ -630,6 +630,11 @@ export default function App() {
         onChangeTab={(tab) => {
           setActiveTab(tab);
           window.scrollTo({ top: 0, behavior: 'smooth' });
+          if (tab === 'map') {
+            setTimeout(() => {
+              window.dispatchEvent(new Event('resize'));
+            }, 100);
+          }
         }}
         savedCount={savedIds.length}
         nearbyCount={filteredCarparks.length}
