@@ -272,7 +272,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
             type="submit"
             disabled={isSearching || !query.trim()}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 disabled:hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-emerald-500/20 transition-all flex-shrink-0"
-            title="Retrieve 5 nearest car parks with >10 available lots"
+            title="Retrieve 5 nearest car parks with >5 available lots"
           >
             {isSearching ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -325,10 +325,10 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/20'
                   : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-slate-700/60'
               }`}
-              title="Toggle between 5 nearest lots (>10 lots) and all nearby carparks"
+              title="Toggle between 5 nearest lots (>5 lots) and all nearby carparks"
             >
               <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-              <span>5 Nearest (&gt;10 lots)</span>
+              <span>5 Nearest (&gt;5 lots)</span>
               {retrievalMode === 'top5' && (
                 <span className="ml-1 px-1.5 py-0.2 bg-emerald-500 text-slate-950 text-[10px] font-black rounded-full">
                   {top5Count}
@@ -455,7 +455,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
                 className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition-all"
               >
                 <Search className="w-3.5 h-3.5" />
-                Find 5 Nearest Lots with &gt;10 available
+                Find 5 Nearest Lots with &gt;5 available
               </button>
             </div>
           ) : (
@@ -500,7 +500,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           <div className="bg-slate-950/80 p-2.5 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
             <span className="flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Retrieves the 5 nearest car parks with &gt;10 available lots</span>
+              <span>Retrieves the 5 nearest car parks with &gt;5 available lots</span>
             </span>
           </div>
         </div>

@@ -166,7 +166,7 @@ export default function App() {
       });
   }, [carparksWithDistances, filterState]);
 
-  // Retrieve the 5 nearest carpark lots with more than 10 available lots
+  // Retrieve the 5 nearest carpark lots with more than 5 available lots
   const top5NearestWithLots = useMemo(() => {
     return carparksWithDistances
       .filter((cp) => {
@@ -174,8 +174,8 @@ export default function App() {
         if (filterState.vehicleType && cp.vehicleType !== filterState.vehicleType) {
           return false;
         }
-        // Requirement: strictly MORE THAN 10 available lots
-        return cp.availableLots > 10;
+        // Requirement: strictly MORE THAN 5 available lots
+        return cp.availableLots > 5;
       })
       .sort((a, b) => (a.distanceMeters ?? 0) - (b.distanceMeters ?? 0))
       .slice(0, 5)
@@ -213,12 +213,13 @@ export default function App() {
     });
   };
 
-  // Select Location from Search - automatically retrieves 5 nearest lots with >10 availability
+  // Select Location from Search - automatically retrieves 5 nearest lots with >5 availability
   const handleSelectLocation = (loc: SearchLocation) => {
     setActiveLocation(loc);
     setSelectedCarpark(null);
     setRetrievalMode('top5');
-    showToast(`Retrieved 5 nearest car parks (>10 lots) near ${loc.name}`);
+    setActiveTab('map');
+    showToast(`Showing 5 nearest car parks (>5 lots) near ${loc.name}`);
   };
 
   // Browser Geolocation
@@ -238,7 +239,10 @@ export default function App() {
             },
           };
           setActiveLocation(userLoc);
-          showToast('Updated to your current GPS position!');
+          setSelectedCarpark(null);
+          setRetrievalMode('top5');
+          setActiveTab('map');
+          showToast('Showing 5 nearest car parks (>5 lots) near you');
         },
         () => {
           showToast('GPS unavailable. Showing Orchard Road (Central SG).');
@@ -424,7 +428,7 @@ export default function App() {
                     <span className="font-bold text-emerald-300">
                       {top5NearestWithLots.length} nearest car parks
                     </span>{' '}
-                    with &gt;10 available lots retrieved for{' '}
+                    with &gt;5 available lots retrieved for{' '}
                     <strong className="text-white">{activeLocation.name}</strong>.
                   </div>
                 </div>
@@ -434,7 +438,7 @@ export default function App() {
               <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
                 {displayedCarparks.length === 0 ? (
                   <div className="text-center py-10 text-xs text-slate-400">
-                    No carparks found with &gt;10 available lots nearby.
+                    No carparks found with &gt;5 available lots nearby.
                   </div>
                 ) : (
                   displayedCarparks.map((cp) => (
@@ -460,6 +464,7 @@ export default function App() {
                 selectedCarpark={selectedCarpark}
                 onSelectCarpark={(cp) => setSelectedCarpark(cp)}
                 onOpenDetails={(cp) => setDetailModalCarpark(cp)}
+                retrievalMode={retrievalMode}
               />
 
               {/* Mobile Quick Switch to List button overlay */}
@@ -492,14 +497,14 @@ export default function App() {
                     <Sparkles className="w-4 h-4 text-emerald-400 inline" />
                   )}
                   {retrievalMode === 'top5'
-                    ? `5 Nearest Car Parks with >10 Available Lots`
+                    ? `5 Nearest Car Parks with >5 Available Lots`
                     : `Found ${displayedCarparks.length} Parking Locations`}
                 </span>
                 <span className="text-[11px] text-slate-400 block mt-0.5">
                   Near <span className="text-slate-200 font-semibold">{activeLocation.name}</span>
                   {activeLocation.road ? ` (${activeLocation.road})` : ''} &bull;{' '}
                   {retrievalMode === 'top5'
-                    ? 'Closest first (>10 available lots)'
+                    ? 'Closest first (>5 available lots)'
                     : `Sorted by ${
                         filterState.sortBy === 'distance'
                           ? 'distance'
@@ -534,7 +539,7 @@ export default function App() {
             {displayedCarparks.length === 0 ? (
               <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 text-center my-6">
                 <p className="text-sm font-semibold text-slate-300 mb-2">
-                  No parking lots found with &gt;10 available lots
+                  No parking lots found with &gt;5 available lots
                 </p>
                 <button
                   type="button"

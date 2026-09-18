@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { Carpark, SearchLocation } from '../types';
 import { getAvailabilityColor, formatDistance } from '../data/singaporeCarparks';
-import { Layers, Navigation, ZoomIn, ZoomOut, Compass, ExternalLink } from 'lucide-react';
+import { Layers, Navigation, ZoomIn, ZoomOut, Compass, ExternalLink, Sparkles } from 'lucide-react';
 
 interface MapViewProps {
   carparks: Carpark[];
@@ -10,6 +10,7 @@ interface MapViewProps {
   selectedCarpark: Carpark | null;
   onSelectCarpark: (cp: Carpark) => void;
   onOpenDetails: (cp: Carpark) => void;
+  retrievalMode?: 'top5' | 'all';
 }
 
 type TileStyle = 'dark' | 'voyager' | 'osm';
@@ -38,6 +39,7 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedCarpark,
   onSelectCarpark,
   onOpenDetails,
+  retrievalMode,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -85,7 +87,7 @@ export const MapView: React.FC<MapViewProps> = ({
     tileLayerRef.current.setUrl(TILE_CONFIGS[tileStyle].url);
   }, [tileStyle]);
 
-  // Update Search Location Marker & Radius
+  // Update Search Location Marker & Radius & Fit Bounds
   useEffect(() => {
     const map = mapInstanceRef.current;
     const searchLayer = searchLocationLayerRef.current;
@@ -130,9 +132,23 @@ export const MapView: React.FC<MapViewProps> = ({
     });
     searchLayer.addLayer(radiusCircle);
 
-    // Pan map to new location
-    map.flyTo([lat, lng], 15, { animate: true, duration: 1 });
-  }, [activeLocation]);
+    // If carparks are available, fit bounds to show both search center and all car parks neatly
+    if (carparks.length > 0) {
+      const allPoints: [number, number][] = [
+        [lat, lng],
+        ...carparks.map((cp) => [cp.coordinates.lat, cp.coordinates.lng] as [number, number]),
+      ];
+      const bounds = L.latLngBounds(allPoints);
+      map.fitBounds(bounds, {
+        padding: [60, 60],
+        maxZoom: 16,
+        animate: true,
+        duration: 0.8,
+      });
+    } else {
+      map.flyTo([lat, lng], 15, { animate: true, duration: 1 });
+    }
+  }, [activeLocation, carparks]);
 
   // Update Carpark Markers
   useEffect(() => {
@@ -147,37 +163,44 @@ export const MapView: React.FC<MapViewProps> = ({
       const isSelected = selectedCarpark?.id === cp.id;
 
       const rankHtml = cp.rank !== undefined
-        ? `<span class="px-1.5 py-0.2 rounded bg-emerald-400 text-slate-950 font-black text-[10px] leading-tight shadow-sm">#${cp.rank}</span>`
+        ? `<span class="px-1.5 py-0.5 rounded bg-emerald-400 text-slate-950 font-black text-[10px] leading-tight shadow-sm">#${cp.rank}</span>`
         : '';
 
       const markerHtml = `
         <div class="carpark-map-badge cursor-pointer transform transition-all hover:scale-110 ${
           isSelected ? 'scale-125 z-50' : 'z-10'
         }">
-          <div class="px-2.5 py-1 rounded-xl shadow-lg border text-xs font-bold flex items-center gap-1.5 backdrop-blur-md ${
+          <div class="px-2.5 py-1.5 rounded-xl shadow-xl border text-xs font-bold flex items-center gap-1.5 backdrop-blur-md ${
             isSelected
               ? 'ring-4 ring-cyan-400/80 ring-offset-2 ring-offset-slate-900 border-white text-white shadow-2xl scale-110'
-              : 'border-slate-700/80 shadow-black/60'
-          }" style="background-color: ${isSelected ? '#0f172a' : '#0f172aee'}; border-color: ${color.pinColor};">
+              : 'border-slate-700/80 shadow-black/70'
+          }" style="background-color: ${isSelected ? '#090d16' : '#0f172aee'}; border-color: ${color.pinColor};">
             ${rankHtml}
             <span class="w-2 h-2 rounded-full ${isSelected ? 'animate-pulse' : ''}" style="background-color: ${color.pinColor};"></span>
-            <span class="font-extrabold" style="color: ${color.pinColor};">${cp.availableLots}</span>
-            <span class="text-[10px] text-slate-400 font-medium">lots</span>
+            <div class="flex items-baseline gap-0.5">
+              <span class="font-extrabold text-xs" style="color: ${color.pinColor};">${cp.availableLots}</span>
+              <span class="text-[10px] text-slate-300 font-medium">lots</span>
+            </div>
           </div>
-          <div class="w-2 h-2 rotate-45 mx-auto -mt-1 border-r border-b" style="background-color: #0f172a; border-color: ${color.pinColor};"></div>
+          <div class="w-2.5 h-2.5 rotate-45 mx-auto -mt-1.5 border-r border-b" style="background-color: #0f172a; border-color: ${color.pinColor};"></div>
         </div>
       `;
 
       const customIcon = L.divIcon({
         className: `custom-carpark-pin ${isSelected ? 'is-selected' : ''}`,
         html: markerHtml,
-        iconSize: [68, 36],
-        iconAnchor: [34, 34],
+        iconSize: [80, 38],
+        iconAnchor: [40, 36],
       });
 
       const marker = L.marker([cp.coordinates.lat, cp.coordinates.lng], {
         icon: customIcon,
       });
+
+      marker.bindTooltip(
+        `<strong>${cp.rank ? `#${cp.rank} ` : ''}${cp.name}</strong><br/><span style="color: ${color.pinColor}; font-weight: bold;">${cp.availableLots} available lots</span> &bull; ${formatDistance(cp.distanceMeters ?? 0)}`,
+        { direction: 'top', offset: [0, -20] }
+      );
 
       // Marker click handler
       marker.on('click', () => {
@@ -202,11 +225,20 @@ export const MapView: React.FC<MapViewProps> = ({
   // Map Controls
   const handleRecenter = () => {
     if (!mapInstanceRef.current) return;
-    mapInstanceRef.current.flyTo(
-      [activeLocation.coordinates.lat, activeLocation.coordinates.lng],
-      15,
-      { animate: true }
-    );
+    if (carparks.length > 0) {
+      const allPoints: [number, number][] = [
+        [activeLocation.coordinates.lat, activeLocation.coordinates.lng],
+        ...carparks.map((cp) => [cp.coordinates.lat, cp.coordinates.lng] as [number, number]),
+      ];
+      const bounds = L.latLngBounds(allPoints);
+      mapInstanceRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
+    } else {
+      mapInstanceRef.current.flyTo(
+        [activeLocation.coordinates.lat, activeLocation.coordinates.lng],
+        15,
+        { animate: true }
+      );
+    }
   };
 
   const handleZoomIn = () => {
@@ -296,20 +328,67 @@ export const MapView: React.FC<MapViewProps> = ({
       </div>
 
       {/* Legend overlay */}
-      <div className="absolute left-3 top-3 z-20 hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-[11px] backdrop-blur-md shadow-md">
+      <div className="absolute left-3 top-3 z-20 hidden md:flex items-center gap-2.5 px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-[11px] backdrop-blur-md shadow-md">
         <div className="flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
           <span className="text-slate-300 font-medium">&gt;30 lots</span>
         </div>
         <div className="flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-          <span className="text-slate-300 font-medium">6-30 lots</span>
+          <span className="text-slate-300 font-medium">6–30 lots</span>
         </div>
         <div className="flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-          <span className="text-slate-300 font-medium">&le;5 / Full</span>
+          <span className="text-slate-300 font-medium">&le;5 lots (Low)</span>
         </div>
       </div>
+
+      {/* 5 Nearest Quick Selector Bar at top */}
+      {retrievalMode === 'top5' && carparks.length > 0 && (
+        <div className="absolute top-3 left-3 sm:left-1/2 sm:-translate-x-1/2 z-20 max-w-[calc(100%-80px)] sm:max-w-2xl">
+          <div className="bg-slate-900/95 border border-slate-700/80 rounded-2xl p-1.5 shadow-2xl backdrop-blur-md flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+            <div className="px-2 py-1 text-[11px] font-bold text-emerald-400 whitespace-nowrap flex items-center gap-1 border-r border-slate-800 pr-2">
+              <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden xs:inline">5 Nearest (&gt;5 lots)</span>
+              <span className="xs:hidden">Top 5</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {carparks.slice(0, 5).map((cp) => {
+                const isSel = selectedCarpark?.id === cp.id;
+                const color = getAvailabilityColor(cp.availableLots, cp.occupancyRate);
+                return (
+                  <button
+                    key={cp.id}
+                    type="button"
+                    onClick={() => onSelectCarpark(cp)}
+                    className={`px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 transition-all whitespace-nowrap ${
+                      isSel
+                        ? 'bg-emerald-500 text-slate-950 font-extrabold shadow-md scale-105'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-200 border border-slate-700/50'
+                    }`}
+                    title={`${cp.name} - ${cp.availableLots} available lots (${formatDistance(cp.distanceMeters ?? 0)})`}
+                  >
+                    <span
+                      className={`px-1 py-0.2 rounded text-[10px] font-black ${
+                        isSel ? 'bg-slate-950 text-emerald-400' : 'bg-slate-700 text-emerald-300'
+                      }`}
+                    >
+                      #{cp.rank ?? 1}
+                    </span>
+                    <span className="font-medium max-w-[70px] truncate hidden lg:inline">{cp.name}</span>
+                    <span
+                      className={`font-bold ${isSel ? 'text-slate-950' : ''}`}
+                      style={!isSel ? { color: color.pinColor } : undefined}
+                    >
+                      {cp.availableLots} lots
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Selected Carpark Preview Card Overlay */}
       {selectedCarpark && (
