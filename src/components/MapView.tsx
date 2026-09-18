@@ -288,7 +288,7 @@ export const MapView: React.FC<MapViewProps> = ({
     if (!showCarparksOverlay) return;
 
     carparks.forEach((cp) => {
-      const color = getAvailabilityColor(cp.availableLots, cp.occupancyRate);
+      const color = getAvailabilityColor(cp.availableLots);
       const isSelected = selectedCarpark?.id === cp.id;
 
       const rankHtml = cp.rank !== undefined
@@ -632,7 +632,7 @@ export const MapView: React.FC<MapViewProps> = ({
             <div className="flex items-center gap-1">
               {carparks.slice(0, 5).map((cp) => {
                 const isSel = selectedCarpark?.id === cp.id;
-                const color = getAvailabilityColor(cp.availableLots, cp.occupancyRate);
+                const color = getAvailabilityColor(cp.availableLots);
                 return (
                   <button
                     key={cp.id}
@@ -747,26 +747,31 @@ export const MapView: React.FC<MapViewProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-800 text-center">
-              <div className="bg-slate-800/60 rounded-xl p-1.5">
-                <div className="text-[10px] text-slate-400">Available</div>
-                <div className="text-sm font-extrabold text-emerald-400">
-                  {selectedCarpark.availableLots}
+            {(() => {
+              const selColor = getAvailabilityColor(selectedCarpark.availableLots);
+              return (
+                <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-800 text-center">
+                  <div className="bg-slate-800/60 rounded-xl p-1.5">
+                    <div className="text-[10px] text-slate-400">Available</div>
+                    <div className="text-sm font-extrabold text-emerald-400">
+                      {selectedCarpark.availableLots}
+                    </div>
+                  </div>
+                  <div className="bg-slate-800/60 rounded-xl p-1.5">
+                    <div className="text-[10px] text-slate-400">Status</div>
+                    <div className={`text-xs font-bold truncate mt-0.5 ${selColor.badgeText}`}>
+                      {selColor.label}
+                    </div>
+                  </div>
+                  <div className="bg-slate-800/60 rounded-xl p-1.5">
+                    <div className="text-[10px] text-slate-400">Est. Distance</div>
+                    <div className="text-sm font-bold text-cyan-400">
+                      {formatDistance(selectedCarpark.distanceMeters ?? 0)}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="bg-slate-800/60 rounded-xl p-1.5">
-                <div className="text-[10px] text-slate-400">Total Lots</div>
-                <div className="text-sm font-bold text-slate-200">
-                  {selectedCarpark.totalLots}
-                </div>
-              </div>
-              <div className="bg-slate-800/60 rounded-xl p-1.5">
-                <div className="text-[10px] text-slate-400">Est. Distance</div>
-                <div className="text-sm font-bold text-cyan-400">
-                  {formatDistance(selectedCarpark.distanceMeters ?? 0)}
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* OneMap Routing Action Bar */}
             <div className="mt-3 pt-2.5 border-t border-slate-800/80">

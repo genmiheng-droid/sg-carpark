@@ -66,7 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="font-extrabold text-emerald-400">{totalAvailableLots.toLocaleString()} Lots</div>
             </div>
             <div className="text-right">
-              <div className="text-[10px] text-slate-400 font-medium">Nearby Lots</div>
+              <div className="text-[10px] text-slate-400 font-medium">Car Parks</div>
               <div className="font-extrabold text-slate-200">{totalCarparks} Locations</div>
             </div>
           </div>

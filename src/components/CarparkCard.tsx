@@ -29,11 +29,7 @@ export const CarparkCard: React.FC<CarparkCardProps> = ({
   onToggleSave,
   onOpenDetails,
 }) => {
-  const color = getAvailabilityColor(carpark.availableLots, carpark.occupancyRate);
-  const occupancyPercentage = Math.min(
-    100,
-    Math.round(((carpark.totalLots - carpark.availableLots) / carpark.totalLots) * 100)
-  );
+  const color = getAvailabilityColor(carpark.availableLots);
 
   return (
     <div
@@ -97,29 +93,20 @@ export const CarparkCard: React.FC<CarparkCardProps> = ({
             </div>
           </div>
           <div className="text-[10px] text-slate-400 mt-1 font-medium">
-            of {carpark.totalLots} total lots
+            Available Lots
           </div>
         </div>
       </div>
 
-      {/* Lot Capacity Visual Progress Bar */}
-      <div className="mt-3">
-        <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-          <span>Occupancy</span>
-          <span className="font-semibold text-slate-300">{occupancyPercentage}% occupied</span>
-        </div>
-        <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-          <div
-            className={`h-full transition-all duration-500 rounded-full ${
-              occupancyPercentage >= 90
-                ? 'bg-rose-500'
-                : occupancyPercentage >= 70
-                ? 'bg-amber-500'
-                : 'bg-emerald-500'
-            }`}
-            style={{ width: `${occupancyPercentage}%` }}
-          />
-        </div>
+      {/* Real-Time Availability Status Row */}
+      <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 bg-slate-950/40 px-3 py-1.5 rounded-xl border border-slate-800/60">
+        <span className="flex items-center gap-1.5">
+          <span className={`w-2 h-2 rounded-full ${color.dotColor}`} />
+          <span className="font-medium text-slate-300">{color.label}</span>
+        </span>
+        <span className="text-[10px] text-slate-400 font-mono">
+          Updated {carpark.lastUpdated}
+        </span>
       </div>
 
       {/* Rates & Features Row */}

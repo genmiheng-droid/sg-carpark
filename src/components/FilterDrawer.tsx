@@ -220,7 +220,7 @@ export const FilterDrawer: React.FC<FilterDrawerProps> = ({
             onClick={onClose}
             className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all shadow-md shadow-emerald-500/20 text-center"
           >
-            Show {totalFilteredCount} Parking Lots
+            Show {totalFilteredCount} Car Parks
           </button>
         </div>
       </div>

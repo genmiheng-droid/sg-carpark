@@ -294,12 +294,9 @@ export default function App() {
                 liveMap[cp.name.toLowerCase()];
 
               if (liveLots !== undefined) {
-                const total = cp.totalLots || Math.max(liveLots + 20, 100);
-                const occupancy = Math.max(0, Math.min(100, Math.round(((total - liveLots) / total) * 100)));
                 return {
                   ...cp,
                   availableLots: liveLots,
-                  occupancyRate: occupancy,
                   lastUpdated: 'Live LTA DataMall',
                 };
               }
@@ -321,12 +318,10 @@ export default function App() {
         prev.map((cp) => {
           // realistic minor random lot fluctuation (-3 to +3)
           const delta = Math.floor(Math.random() * 7) - 3;
-          const newAvailable = Math.max(0, Math.min(cp.totalLots, cp.availableLots + delta));
-          const newOccupancy = Math.round(((cp.totalLots - newAvailable) / cp.totalLots) * 100);
+          const newAvailable = Math.max(0, cp.availableLots + delta);
           return {
             ...cp,
             availableLots: newAvailable,
-            occupancyRate: newOccupancy,
             lastUpdated: 'Just now',
           };
         })

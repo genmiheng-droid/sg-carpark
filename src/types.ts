@@ -23,9 +23,8 @@ export interface Carpark {
   };
   agency: AgencyType;
   vehicleType: VehicleType;
-  totalLots: number;
   availableLots: number;
-  occupancyRate: number; // 0 to 100%
+  occupancyRate?: number; // Optional legacy indicator
   heightLimit?: string; // e.g., "2.0m", "4.0m"
   hasEps: boolean; // Electronic Parking System
   hasEvCharging?: boolean;

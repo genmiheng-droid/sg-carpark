@@ -31,12 +31,7 @@ export const CarparkDetailModal: React.FC<CarparkDetailModalProps> = ({
 }) => {
   if (!carpark) return null;
 
-  const color = getAvailabilityColor(carpark.availableLots, carpark.occupancyRate);
-  const occupiedLots = Math.max(0, carpark.totalLots - carpark.availableLots);
-  const occupancyPercentage = Math.min(
-    100,
-    Math.round((occupiedLots / carpark.totalLots) * 100)
-  );
+  const color = getAvailabilityColor(carpark.availableLots);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
@@ -80,13 +75,13 @@ export const CarparkDetailModal: React.FC<CarparkDetailModalProps> = ({
 
         {/* Real-Time Availability Hero Meter */}
         <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 mb-5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <div>
               <div className="text-xs font-medium text-slate-400">Real-Time Availability</div>
               <div className="flex items-baseline gap-2 mt-0.5">
                 <span className="text-3xl font-black text-white">{carpark.availableLots}</span>
                 <span className="text-sm font-semibold text-slate-400">
-                  / {carpark.totalLots} total lots
+                  available lots
                 </span>
               </div>
             </div>
@@ -99,23 +94,12 @@ export const CarparkDetailModal: React.FC<CarparkDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Progress Bar */}
-          <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden mb-2">
-            <div
-              className={`h-full transition-all duration-500 rounded-full ${
-                occupancyPercentage >= 90
-                  ? 'bg-rose-500'
-                  : occupancyPercentage >= 70
-                  ? 'bg-amber-500'
-                  : 'bg-emerald-500'
-              }`}
-              style={{ width: `${occupancyPercentage}%` }}
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>{occupiedLots} Occupied</span>
-            <span>Updated {carpark.lastUpdated}</span>
+          <div className="flex items-center justify-between text-xs text-slate-400 pt-2.5 border-t border-slate-800/80">
+            <span className="flex items-center gap-1 text-slate-300 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              Live LTA Availability
+            </span>
+            <span className="font-mono">Updated {carpark.lastUpdated}</span>
           </div>
         </div>
 
