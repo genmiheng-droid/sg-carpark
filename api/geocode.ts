@@ -16,7 +16,7 @@ interface ExtendedResponse extends ServerResponse {
 function sendJson(res: ExtendedResponse, statusCode: number, data: unknown) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS, HEAD');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (typeof res.status === 'function' && typeof res.json === 'function') {
     res.status(statusCode);
@@ -36,6 +36,8 @@ const geocodeCache = new Map<string, any[]>();
 
 /**
  * Serverless Singapore Geocoding Endpoint
+ * Primary Engine: Singapore OneMap Government Elastic Search
+ * Fallback: OpenStreetMap Nominatim
  * GET /api/geocode?q=...
  */
 export default async function handler(req: ExtendedRequest, res: ExtendedResponse) {
@@ -65,7 +67,82 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
       });
     }
 
-    // Expand common Singapore abbreviations for Nominatim
+    // 1. PRIMARY: Query Singapore OneMap Elastic Search
+    const onemapToken =
+      (typeof req.headers['authorization'] === 'string'
+        ? req.headers['authorization'].replace(/^Bearer\s+/i, '').trim()
+        : '') || process.env.ONEMAP_TOKEN;
+
+    const onemapHeaders: Record<string, string> = { Accept: 'application/json' };
+    if (onemapToken) {
+      onemapHeaders['Authorization'] = onemapToken;
+    }
+
+    try {
+      const onemapUrl = `https://www.onemap.gov.sg/api/common/elastic/search?searchVal=${encodeURIComponent(
+        cleanQuery
+      )}&returnGeom=Y&getAddrDetails=Y&pageNum=1`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3500);
+
+      const onemapRes = await fetch(onemapUrl, {
+        headers: onemapHeaders,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout));
+
+      if (onemapRes.ok) {
+        const onemapData = await onemapRes.json();
+        if (Array.isArray(onemapData.results) && onemapData.results.length > 0) {
+          const results = onemapData.results.map((item: any) => {
+            const lat = parseFloat(item.LATITUDE);
+            const lng = parseFloat(item.LONGITUDE);
+            const building = item.BUILDING && item.BUILDING !== 'NIL' ? item.BUILDING : '';
+            const road = item.ROAD_NAME && item.ROAD_NAME !== 'NIL' ? item.ROAD_NAME : '';
+            const postal = item.POSTAL && item.POSTAL !== 'NIL' ? `Singapore ${item.POSTAL}` : '';
+            const searchVal = item.SEARCHVAL || building || road;
+
+            let category: 'Road' | 'Building' | 'Landmark' | 'Transit' = 'Building';
+            const upperSearch = searchVal.toUpperCase();
+            if (upperSearch.includes('MRT') || upperSearch.includes('LRT') || upperSearch.includes('STATION')) {
+              category = 'Transit';
+            } else if (!building && road) {
+              category = 'Road';
+            } else if (item.BLK_NO || building) {
+              category = 'Building';
+            } else {
+              category = 'Landmark';
+            }
+
+            return {
+              id: `onemap-${item.POSTAL || ''}-${lat.toFixed(4)}-${lng.toFixed(4)}`,
+              name: searchVal,
+              displayName: item.ADDRESS || `${building ? building + ', ' : ''}${road}`,
+              area: postal || 'Singapore',
+              category,
+              road: road || undefined,
+              postal: item.POSTAL !== 'NIL' ? item.POSTAL : undefined,
+              coordinates: {
+                lat,
+                lng,
+              },
+              source: 'onemap',
+            };
+          });
+
+          geocodeCache.set(cacheKey, results);
+          return sendJson(res, 200, {
+            source: 'onemap',
+            query: cleanQuery,
+            results,
+          });
+        }
+      }
+    } catch (onemapErr) {
+      console.warn('OneMap search warning, falling back to OSM:', onemapErr);
+    }
+
+    // 2. FALLBACK: OpenStreetMap Nominatim
     let searchTerms = cleanQuery
       .replace(/\bave\b/gi, 'Avenue')
       .replace(/\brd\b/gi, 'Road')
@@ -127,6 +204,7 @@ export default async function handler(req: ExtendedRequest, res: ExtendedRespons
               lat: parseFloat(item.lat),
               lng: parseFloat(item.lon),
             },
+            source: 'osm',
           };
         })
       : [];

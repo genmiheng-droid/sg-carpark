@@ -50,6 +50,19 @@ function serverlessApiPlugin(): Plugin {
           }
         }
 
+        if (pathname.startsWith('/api/onemap')) {
+          try {
+            const onemapModule = await server.ssrLoadModule('./api/onemap.ts');
+            return await onemapModule.default(req, res);
+          } catch (error) {
+            console.error('API /api/onemap error:', error);
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: String(error) }));
+            return;
+          }
+        }
+
         next();
       });
     },

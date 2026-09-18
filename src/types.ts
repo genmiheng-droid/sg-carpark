@@ -56,6 +56,27 @@ export interface SearchLocation {
   };
   road?: string;
   displayName?: string;
+  postal?: string;
+  source?: 'onemap' | 'local' | 'osm' | 'gps';
+}
+
+export interface OneMapRouteResult {
+  status: number;
+  statusMessage?: string;
+  routeType: 'walk' | 'drive' | 'cycle' | 'pt';
+  totalTimeSeconds: number;
+  totalDistanceMeters: number;
+  decodedPoints: [number, number][];
+}
+
+export interface OneMapTokenStatus {
+  configured: boolean;
+  hasEnvToken: boolean;
+  hasEnvCredentials: boolean;
+  isCached: boolean;
+  cachedEmail?: string | null;
+  expiresAt?: string | null;
+  tokenPreview?: string | null;
 }
 
 export interface FilterState {

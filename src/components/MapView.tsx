@@ -1,9 +1,23 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Carpark, SearchLocation } from '../types';
+import { Carpark, SearchLocation, OneMapRouteResult } from '../types';
 import { getAvailabilityColor, formatDistance } from '../data/singaporeCarparks';
-import { Layers, Navigation, ZoomIn, ZoomOut, Compass, ExternalLink, Sparkles } from 'lucide-react';
+import {
+  Layers,
+  Navigation,
+  ZoomIn,
+  ZoomOut,
+  Compass,
+  ExternalLink,
+  Sparkles,
+  Footprints,
+  Car,
+  AlertCircle,
+  X,
+  Loader2,
+  Key,
+} from 'lucide-react';
 
 interface MapViewProps {
   carparks: Carpark[];
@@ -12,6 +26,7 @@ interface MapViewProps {
   onSelectCarpark: (cp: Carpark) => void;
   onOpenDetails: (cp: Carpark) => void;
   retrievalMode?: 'top5' | 'all';
+  onOpenApiSettings?: () => void;
 }
 
 type TileStyle = 'dark' | 'voyager' | 'osm';
@@ -41,21 +56,37 @@ export const MapView: React.FC<MapViewProps> = ({
   onSelectCarpark,
   onOpenDetails,
   retrievalMode,
+  onOpenApiSettings,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const searchLocationLayerRef = useRef<L.LayerGroup | null>(null);
+  const routeLayerRef = useRef<L.LayerGroup | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
   const [tileStyle, setTileStyle] = useState<TileStyle>('dark');
   const [showTileMenu, setShowTileMenu] = useState(false);
 
+  // OneMap Route States
+  const [activeRoute, setActiveRoute] = useState<OneMapRouteResult | null>(null);
+  const [isFetchingRoute, setIsFetchingRoute] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [currentRouteType, setCurrentRouteType] = useState<'walk' | 'drive'>('walk');
+
+  // Clear route when carpark selection changes
+  useEffect(() => {
+    setActiveRoute(null);
+    setRouteError(null);
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    }
+  }, [selectedCarpark?.id, activeLocation.coordinates.lat, activeLocation.coordinates.lng]);
+
   // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    // Reset any previously assigned Leaflet ID to avoid initialization collision
     const container = mapContainerRef.current as any;
     if (container._leaflet_id) {
       delete container._leaflet_id;
@@ -77,13 +108,13 @@ export const MapView: React.FC<MapViewProps> = ({
 
     tileLayerRef.current = initialTile;
 
-    // Layer groups for markers
+    // Layer groups
     searchLocationLayerRef.current = L.layerGroup().addTo(initialMap);
     markersLayerRef.current = L.layerGroup().addTo(initialMap);
+    routeLayerRef.current = L.layerGroup().addTo(initialMap);
 
     mapInstanceRef.current = initialMap;
 
-    // Invalidate size on multiple ticks to guarantee tiles render when flex dimensions settle
     const forceResize = () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.invalidateSize();
@@ -118,24 +149,28 @@ export const MapView: React.FC<MapViewProps> = ({
   // Handle Tile Style changes
   useEffect(() => {
     if (!mapInstanceRef.current || !tileLayerRef.current) return;
-    tileLayerRef.current.setUrl(TILE_CONFIGS[tileStyle].url);
+
+    mapInstanceRef.current.removeLayer(tileLayerRef.current);
+
+    const newTile = L.tileLayer(TILE_CONFIGS[tileStyle].url, {
+      attribution: TILE_CONFIGS[tileStyle].attribution,
+      maxZoom: 19,
+      subdomains: 'abcd',
+    }).addTo(mapInstanceRef.current);
+
+    tileLayerRef.current = newTile;
   }, [tileStyle]);
 
-  // Safe viewport bounds fitting
+  // Fit View to Searched Location + Car Parks
   const fitViewToLocations = useCallback(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    map.invalidateSize();
-    const size = map.getSize();
-
-    // If container size is not computed yet, delay
-    if (size.x <= 0 || size.y <= 0) {
-      setTimeout(fitViewToLocations, 150);
+    const { lat, lng } = activeLocation.coordinates;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
       return;
     }
 
-    const { lat, lng } = activeLocation.coordinates;
     if (carparks.length > 0) {
       const validPoints: [number, number][] = [
         [lat, lng],
@@ -162,7 +197,7 @@ export const MapView: React.FC<MapViewProps> = ({
     map.setView([lat, lng], 15);
   }, [activeLocation, carparks]);
 
-  // Update Search Location Marker & Radius & Fit Bounds
+  // Update Search Location Marker & Radius
   useEffect(() => {
     const map = mapInstanceRef.current;
     const searchLayer = searchLocationLayerRef.current;
@@ -207,7 +242,6 @@ export const MapView: React.FC<MapViewProps> = ({
     });
     searchLayer.addLayer(radiusCircle);
 
-    // Trigger viewport adjustment
     const timer = setTimeout(() => {
       fitViewToLocations();
     }, 100);
@@ -277,14 +311,99 @@ export const MapView: React.FC<MapViewProps> = ({
 
   // Pan when selectedCarpark changes externally
   useEffect(() => {
-    if (selectedCarpark && mapInstanceRef.current) {
+    if (selectedCarpark && mapInstanceRef.current && !activeRoute) {
       mapInstanceRef.current.flyTo(
         [selectedCarpark.coordinates.lat, selectedCarpark.coordinates.lng],
         16,
         { animate: true, duration: 0.8 }
       );
     }
-  }, [selectedCarpark]);
+  }, [selectedCarpark, activeRoute]);
+
+  // Request Route from OneMap API
+  const handleFetchRoute = async (type: 'walk' | 'drive') => {
+    if (!selectedCarpark || !mapInstanceRef.current) return;
+
+    setIsFetchingRoute(true);
+    setRouteError(null);
+    setCurrentRouteType(type);
+
+    const start = `${activeLocation.coordinates.lat},${activeLocation.coordinates.lng}`;
+    const end = `${selectedCarpark.coordinates.lat},${selectedCarpark.coordinates.lng}`;
+
+    try {
+      const res = await fetch(`/api/onemap/route?start=${start}&end=${end}&routeType=${type}`);
+      const data = await res.json();
+
+      if (res.status === 401 || data.error?.includes('Authentication token')) {
+        setRouteError(
+          'OneMap Routing requires an authenticated token (lasts 3 days). Mint your token in API Settings.'
+        );
+        return;
+      }
+
+      if (!res.ok || data.status !== 0) {
+        setRouteError(data.status_message || data.error || 'Failed to calculate route via OneMap.');
+        return;
+      }
+
+      const routeData: OneMapRouteResult = {
+        status: data.status,
+        statusMessage: data.status_message,
+        routeType: type,
+        totalTimeSeconds: data.total_time,
+        totalDistanceMeters: data.total_distance,
+        decodedPoints: data.decoded_points || [],
+      };
+
+      setActiveRoute(routeData);
+
+      // Render polyline on map
+      if (routeLayerRef.current && routeData.decodedPoints.length > 0) {
+        routeLayerRef.current.clearLayers();
+
+        // Background glow line
+        const glowLine = L.polyline(routeData.decodedPoints, {
+          color: type === 'walk' ? '#10b981' : '#06b6d4',
+          weight: 7,
+          opacity: 0.35,
+        });
+        routeLayerRef.current.addLayer(glowLine);
+
+        // Foreground precise line
+        const mainLine = L.polyline(routeData.decodedPoints, {
+          color: type === 'walk' ? '#34d399' : '#22d3ee',
+          weight: 4,
+          opacity: 0.95,
+          dashArray: type === 'walk' ? '8, 8' : undefined,
+        });
+        routeLayerRef.current.addLayer(mainLine);
+
+        // Fit bounds to route
+        const routeBounds = mainLine.getBounds();
+        if (routeBounds.isValid()) {
+          mapInstanceRef.current.fitBounds(routeBounds, {
+            padding: [60, 60],
+            maxZoom: 17,
+            animate: true,
+          });
+        }
+      }
+    } catch (err: any) {
+      setRouteError(err.message || 'Network error fetching OneMap route.');
+    } finally {
+      setIsFetchingRoute(false);
+    }
+  };
+
+  const clearRoute = () => {
+    setActiveRoute(null);
+    setRouteError(null);
+    if (routeLayerRef.current) {
+      routeLayerRef.current.clearLayers();
+    }
+    fitViewToLocations();
+  };
 
   // Map Controls
   const handleRecenter = () => {
@@ -303,7 +422,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
   return (
     <div className="relative w-full h-full min-h-[500px] flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
-      {/* Map Container - absolute inset-0 guarantees full coverage and non-zero dimensions */}
+      {/* Map Container */}
       <div
         id="sg-carpark-leaflet-map"
         ref={mapContainerRef}
@@ -445,6 +564,56 @@ export const MapView: React.FC<MapViewProps> = ({
         </div>
       )}
 
+      {/* Live Route Bar Banner (When Route is Plotted) */}
+      {activeRoute && (
+        <div className="absolute top-14 left-3 right-3 sm:left-1/2 sm:-translate-x-1/2 sm:w-auto z-20">
+          <div className="bg-slate-900/95 border border-emerald-500/50 rounded-2xl px-4 py-2 shadow-2xl backdrop-blur-md flex items-center justify-between gap-4 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold">
+                {activeRoute.routeType === 'walk' ? (
+                  <Footprints className="w-4 h-4" />
+                ) : (
+                  <Car className="w-4 h-4" />
+                )}
+              </span>
+              <div>
+                <span className="font-bold text-white">
+                  OneMap {activeRoute.routeType === 'walk' ? 'Walking' : 'Driving'} Route:
+                </span>{' '}
+                <span className="text-emerald-400 font-extrabold">
+                  {Math.max(1, Math.round(activeRoute.totalTimeSeconds / 60))} mins
+                </span>{' '}
+                &bull;{' '}
+                <span className="text-cyan-300 font-semibold">
+                  {formatDistance(activeRoute.totalDistanceMeters)}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() =>
+                  handleFetchRoute(activeRoute.routeType === 'walk' ? 'drive' : 'walk')
+                }
+                disabled={isFetchingRoute}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-300 transition-colors"
+              >
+                Switch to {activeRoute.routeType === 'walk' ? 'Drive' : 'Walk'}
+              </button>
+              <button
+                type="button"
+                onClick={clearRoute}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                title="Clear route"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Selected Carpark Preview Card Overlay */}
       {selectedCarpark && (
         <div className="absolute bottom-3 left-3 right-3 sm:left-auto sm:right-3 sm:w-96 z-20">
@@ -471,7 +640,7 @@ export const MapView: React.FC<MapViewProps> = ({
                 className="text-slate-400 hover:text-white text-xs p-1"
                 title="Dismiss preview"
               >
-                &times;
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -496,16 +665,85 @@ export const MapView: React.FC<MapViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-2 mt-3 pt-2">
+            {/* OneMap Routing Action Bar */}
+            <div className="mt-3 pt-2.5 border-t border-slate-800/80">
+              <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1.5">
+                <span className="font-semibold text-slate-300 flex items-center gap-1">
+                  <Compass className="w-3.5 h-3.5 text-cyan-400" />
+                  OneMap Routing
+                </span>
+                <span className="text-[10px] text-slate-500">Government SLA API</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleFetchRoute('walk')}
+                  disabled={isFetchingRoute}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border ${
+                    activeRoute?.routeType === 'walk'
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                  }`}
+                >
+                  {isFetchingRoute && currentRouteType === 'walk' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Footprints className="w-3.5 h-3.5" />
+                  )}
+                  <span>Walk Route</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleFetchRoute('drive')}
+                  disabled={isFetchingRoute}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border ${
+                    activeRoute?.routeType === 'drive'
+                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                  }`}
+                >
+                  {isFetchingRoute && currentRouteType === 'drive' ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Car className="w-3.5 h-3.5" />
+                  )}
+                  <span>Drive Route</span>
+                </button>
+              </div>
+
+              {/* Route Error / Token Helper */}
+              {routeError && (
+                <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-300 flex items-start gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span>{routeError}</span>
+                    {onOpenApiSettings && (
+                      <button
+                        type="button"
+                        onClick={onOpenApiSettings}
+                        className="block mt-1 font-bold underline text-amber-400 hover:text-amber-300"
+                      >
+                        Open API Settings to mint 3-day token &rarr;
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-800/80">
               <div className="text-[11px] text-slate-300 font-medium truncate">
                 Rate: <span className="text-emerald-400 font-semibold">{selectedCarpark.rateInfo.weekdayRate.split(',')[0]}</span>
               </div>
               <button
                 type="button"
                 onClick={() => onOpenDetails(selectedCarpark)}
-                className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1 transition-colors flex-shrink-0 cursor-pointer"
+                className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1 transition-colors flex-shrink-0 cursor-pointer shadow-sm"
               >
-                <span>View Details</span>
+                <span>Full Details</span>
                 <ExternalLink className="w-3 h-3" />
               </button>
             </div>

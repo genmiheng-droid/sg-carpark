@@ -72,6 +72,9 @@ export default function App() {
     return localStorage.getItem('sg_lta_datamall_key') || '';
   });
   const [isLiveApiEnabled, setIsLiveApiEnabled] = useState(false);
+  const [onemapToken, setOnemapToken] = useState(() => {
+    return localStorage.getItem('sg_onemap_token') || '';
+  });
 
   // Refresh State & Toast
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -465,6 +468,7 @@ export default function App() {
                 onSelectCarpark={(cp) => setSelectedCarpark(cp)}
                 onOpenDetails={(cp) => setDetailModalCarpark(cp)}
                 retrievalMode={retrievalMode}
+                onOpenApiSettings={() => setActiveTab('api')}
               />
 
               {/* Mobile Quick Switch to List button overlay */}
@@ -601,6 +605,12 @@ export default function App() {
             onToggleLiveApi={(enabled) => {
               setIsLiveApiEnabled(enabled);
               showToast(enabled ? 'Switched to Live API Mode' : 'Switched to Demo Data Mode');
+            }}
+            onemapToken={onemapToken}
+            onSaveOnemapToken={(token) => {
+              setOnemapToken(token);
+              localStorage.setItem('sg_onemap_token', token);
+              showToast('Singapore OneMap Token saved');
             }}
           />
         )}
