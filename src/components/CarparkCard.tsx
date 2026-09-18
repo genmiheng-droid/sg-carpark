@@ -49,6 +49,12 @@ export const CarparkCard: React.FC<CarparkCardProps> = ({
         <div className="flex-1 min-w-0">
           {/* Tag Badges */}
           <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+            {carpark.rank !== undefined && (
+              <span className="px-2 py-0.5 text-[11px] font-black uppercase rounded-md bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20 flex items-center gap-1">
+                <span>#{carpark.rank}</span>
+                <span className="text-[10px] font-bold">Nearest</span>
+              </span>
+            )}
             <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-slate-800 text-slate-300 border border-slate-700/60">
               {carpark.agency}
             </span>

@@ -26,11 +26,14 @@ import {
   FilterState,
   ActiveTab,
 } from './types';
-import { ListFilter, Map, CheckCircle2 } from 'lucide-react';
+import { ListFilter, Map, CheckCircle2, Sparkles } from 'lucide-react';
 
 export default function App() {
   // Active Search Location (default: Orchard Road)
   const [activeLocation, setActiveLocation] = useState<SearchLocation>(POPULAR_LOCATIONS[0]);
+
+  // Retrieval mode: 'top5' (default: 5 nearest with >10 lots) or 'all' (standard filter)
+  const [retrievalMode, setRetrievalMode] = useState<'top5' | 'all'>('top5');
 
   // Carpark data state
   const [carparks, setCarparks] = useState<Carpark[]>(INITIAL_CARPARKS);
@@ -163,6 +166,34 @@ export default function App() {
       });
   }, [carparksWithDistances, filterState]);
 
+  // Retrieve the 5 nearest carpark lots with more than 10 available lots
+  const top5NearestWithLots = useMemo(() => {
+    return carparksWithDistances
+      .filter((cp) => {
+        // Vehicle type filter
+        if (filterState.vehicleType && cp.vehicleType !== filterState.vehicleType) {
+          return false;
+        }
+        // Requirement: strictly MORE THAN 10 available lots
+        return cp.availableLots > 10;
+      })
+      .sort((a, b) => (a.distanceMeters ?? 0) - (b.distanceMeters ?? 0))
+      .slice(0, 5)
+      .map((cp, idx) => ({
+        ...cp,
+        rank: idx + 1,
+        isTop5Result: true,
+      }));
+  }, [carparksWithDistances, filterState.vehicleType]);
+
+  // Active displayed carparks based on retrievalMode
+  const displayedCarparks = useMemo(() => {
+    if (retrievalMode === 'top5') {
+      return top5NearestWithLots;
+    }
+    return filteredCarparks;
+  }, [retrievalMode, top5NearestWithLots, filteredCarparks]);
+
   // Saved Carparks
   const savedCarparks = useMemo(() => {
     return carparksWithDistances.filter((cp) => savedIds.includes(cp.id));
@@ -182,11 +213,12 @@ export default function App() {
     });
   };
 
-  // Select Location from Search
+  // Select Location from Search - automatically retrieves 5 nearest lots with >10 availability
   const handleSelectLocation = (loc: SearchLocation) => {
     setActiveLocation(loc);
     setSelectedCarpark(null);
-    showToast(`Updated location to ${loc.name}`);
+    setRetrievalMode('top5');
+    showToast(`Retrieved 5 nearest car parks (>10 lots) near ${loc.name}`);
   };
 
   // Browser Geolocation
@@ -342,6 +374,7 @@ export default function App() {
           <div className="mb-3">
             <SearchBar
               activeLocation={activeLocation}
+              carparks={carparks}
               onSelectLocation={handleSelectLocation}
               filterState={filterState}
               onUpdateFilter={(updates) => setFilterState((prev) => ({ ...prev, ...updates }))}
@@ -349,6 +382,9 @@ export default function App() {
               onRefreshAvailability={handleRefreshAvailability}
               isRefreshing={isRefreshing}
               onOpenFilterDrawer={() => setIsFilterDrawerOpen(true)}
+              retrievalMode={retrievalMode}
+              onToggleRetrievalMode={setRetrievalMode}
+              top5Count={top5NearestWithLots.length}
             />
           </div>
         )}
@@ -360,20 +396,48 @@ export default function App() {
             <div className="hidden lg:flex flex-col w-[380px] h-full bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3 overflow-hidden">
               <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-white">
-                  <ListFilter className="w-4 h-4 text-emerald-400" />
-                  <span>Nearby Parking ({filteredCarparks.length})</span>
+                  {retrievalMode === 'top5' ? (
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <ListFilter className="w-4 h-4 text-emerald-400" />
+                  )}
+                  <span>
+                    {retrievalMode === 'top5'
+                      ? `5 Nearest (>10 Lots)`
+                      : `Nearby Parking (${displayedCarparks.length})`}
+                  </span>
                 </div>
-                <span className="text-[11px] text-slate-400">Nearest first</span>
+                <button
+                  type="button"
+                  onClick={() => setRetrievalMode(retrievalMode === 'top5' ? 'all' : 'top5')}
+                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold transition-colors"
+                >
+                  {retrievalMode === 'top5' ? 'Show All Lots' : 'Show 5 Nearest'}
+                </button>
               </div>
+
+              {/* Top 5 Context Banner */}
+              {retrievalMode === 'top5' && (
+                <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-2.5 mb-2.5 text-[11px] text-slate-300 flex items-start gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-emerald-300">
+                      {top5NearestWithLots.length} nearest car parks
+                    </span>{' '}
+                    with &gt;10 available lots retrieved for{' '}
+                    <strong className="text-white">{activeLocation.name}</strong>.
+                  </div>
+                </div>
+              )}
 
               {/* Scrollable Carpark Cards */}
               <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                {filteredCarparks.length === 0 ? (
+                {displayedCarparks.length === 0 ? (
                   <div className="text-center py-10 text-xs text-slate-400">
-                    No carparks found matching active filters.
+                    No carparks found with &gt;10 available lots nearby.
                   </div>
                 ) : (
-                  filteredCarparks.map((cp) => (
+                  displayedCarparks.map((cp) => (
                     <CarparkCard
                       key={cp.id}
                       carpark={cp}
@@ -391,7 +455,7 @@ export default function App() {
             {/* Interactive Leaflet Map */}
             <div className="flex-1 h-full relative rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
               <MapView
-                carparks={filteredCarparks}
+                carparks={displayedCarparks}
                 activeLocation={activeLocation}
                 selectedCarpark={selectedCarpark}
                 onSelectCarpark={(cp) => setSelectedCarpark(cp)}
@@ -406,7 +470,11 @@ export default function App() {
                   className="px-3.5 py-2 rounded-xl bg-slate-900/95 border border-slate-700 text-xs font-bold text-slate-200 shadow-xl backdrop-blur-md flex items-center gap-1.5 hover:text-white"
                 >
                   <ListFilter className="w-4 h-4 text-emerald-400" />
-                  <span>View List ({filteredCarparks.length})</span>
+                  <span>
+                    {retrievalMode === 'top5'
+                      ? `5 Nearest Lots`
+                      : `View List (${displayedCarparks.length})`}
+                  </span>
                 </button>
               </div>
             </div>
@@ -419,20 +487,38 @@ export default function App() {
             {/* List Header Bar */}
             <div className="flex items-center justify-between mb-3 bg-slate-900/50 p-3 rounded-xl border border-slate-800/60">
               <div>
-                <span className="text-xs font-bold text-white">
-                  Found {filteredCarparks.length} Parking Locations
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  {retrievalMode === 'top5' && (
+                    <Sparkles className="w-4 h-4 text-emerald-400 inline" />
+                  )}
+                  {retrievalMode === 'top5'
+                    ? `5 Nearest Car Parks with >10 Available Lots`
+                    : `Found ${displayedCarparks.length} Parking Locations`}
                 </span>
-                <span className="text-[11px] text-slate-400 block">
-                  Near {activeLocation.name} &bull; Sorted by{' '}
-                  {filterState.sortBy === 'distance'
-                    ? 'distance'
-                    : filterState.sortBy === 'availability'
-                    ? 'most available'
-                    : 'price'}
+                <span className="text-[11px] text-slate-400 block mt-0.5">
+                  Near <span className="text-slate-200 font-semibold">{activeLocation.name}</span>
+                  {activeLocation.road ? ` (${activeLocation.road})` : ''} &bull;{' '}
+                  {retrievalMode === 'top5'
+                    ? 'Closest first (>10 available lots)'
+                    : `Sorted by ${
+                        filterState.sortBy === 'distance'
+                          ? 'distance'
+                          : filterState.sortBy === 'availability'
+                          ? 'most available'
+                          : 'price'
+                      }`}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRetrievalMode(retrievalMode === 'top5' ? 'all' : 'top5')}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-300 border border-slate-700 transition-colors"
+                >
+                  {retrievalMode === 'top5' ? 'Show All' : '5 Nearest'}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setActiveTab('map')}
@@ -445,22 +531,22 @@ export default function App() {
             </div>
 
             {/* List of Cards */}
-            {filteredCarparks.length === 0 ? (
+            {displayedCarparks.length === 0 ? (
               <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 text-center my-6">
                 <p className="text-sm font-semibold text-slate-300 mb-2">
-                  No parking lots match your filters
+                  No parking lots found with &gt;10 available lots
                 </p>
                 <button
                   type="button"
-                  onClick={handleResetFilters}
+                  onClick={() => setRetrievalMode('all')}
                   className="text-xs text-emerald-400 font-bold hover:underline"
                 >
-                  Reset all filters
+                  Show all lots without availability filter
                 </button>
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredCarparks.map((cp) => (
+                {displayedCarparks.map((cp) => (
                   <CarparkCard
                     key={cp.id}
                     carpark={cp}

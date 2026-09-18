@@ -32,17 +32,30 @@ export interface Carpark {
   rateInfo: ParkingRate;
   lastUpdated: string;
   distanceMeters?: number; // calculated relative to active search location
+  rank?: number; // 1 to 5 for nearest lots retrieval
+  isTop5Result?: boolean;
 }
+
+export type LocationCategory =
+  | 'Landmark'
+  | 'Shopping'
+  | 'Business'
+  | 'Residential'
+  | 'Transit'
+  | 'Road'
+  | 'Building';
 
 export interface SearchLocation {
   id: string;
   name: string;
   area: string;
-  category: 'Landmark' | 'Shopping' | 'Business' | 'Residential' | 'Transit';
+  category: LocationCategory;
   coordinates: {
     lat: number;
     lng: number;
   };
+  road?: string;
+  displayName?: string;
 }
 
 export interface FilterState {

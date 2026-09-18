@@ -146,6 +146,10 @@ export const MapView: React.FC<MapViewProps> = ({
       const color = getAvailabilityColor(cp.availableLots, cp.occupancyRate);
       const isSelected = selectedCarpark?.id === cp.id;
 
+      const rankHtml = cp.rank !== undefined
+        ? `<span class="px-1.5 py-0.2 rounded bg-emerald-400 text-slate-950 font-black text-[10px] leading-tight shadow-sm">#${cp.rank}</span>`
+        : '';
+
       const markerHtml = `
         <div class="carpark-map-badge cursor-pointer transform transition-all hover:scale-110 ${
           isSelected ? 'scale-125 z-50' : 'z-10'
@@ -155,6 +159,7 @@ export const MapView: React.FC<MapViewProps> = ({
               ? 'ring-4 ring-cyan-400/80 ring-offset-2 ring-offset-slate-900 border-white text-white shadow-2xl scale-110'
               : 'border-slate-700/80 shadow-black/60'
           }" style="background-color: ${isSelected ? '#0f172a' : '#0f172aee'}; border-color: ${color.pinColor};">
+            ${rankHtml}
             <span class="w-2 h-2 rounded-full ${isSelected ? 'animate-pulse' : ''}" style="background-color: ${color.pinColor};"></span>
             <span class="font-extrabold" style="color: ${color.pinColor};">${cp.availableLots}</span>
             <span class="text-[10px] text-slate-400 font-medium">lots</span>

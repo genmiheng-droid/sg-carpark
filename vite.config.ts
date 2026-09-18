@@ -37,6 +37,19 @@ function serverlessApiPlugin(): Plugin {
           }
         }
 
+        if (pathname === '/api/geocode' || pathname === '/api/geocode/') {
+          try {
+            const geocodeModule = await server.ssrLoadModule('./api/geocode.ts');
+            return await geocodeModule.default(req, res);
+          } catch (error) {
+            console.error('API /api/geocode error:', error);
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: String(error) }));
+            return;
+          }
+        }
+
         next();
       });
     },
