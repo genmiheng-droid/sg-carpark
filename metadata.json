@@ -1,0 +1,6 @@
+{
+  "name": "SG Carpark Availability",
+  "description": "Real-time Singapore carpark lot availability finder with interactive map, location search, and nearby parking rates.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
