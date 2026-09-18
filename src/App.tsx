@@ -219,9 +219,64 @@ export default function App() {
     }
   };
 
-  // Refresh Real-Time Lot availability (simulates live API fetch with variance)
-  const handleRefreshAvailability = () => {
+  // Refresh Real-Time Lot availability (supports live /api/carparkavailability endpoint)
+  const handleRefreshAvailability = async () => {
     setIsRefreshing(true);
+
+    if (isLiveApiEnabled) {
+      try {
+        const headers: Record<string, string> = {};
+        if (apiKey.trim()) {
+          headers['AccountKey'] = apiKey.trim();
+        }
+
+        const res = await fetch('/api/carparkavailability', { headers });
+        const json = await res.json();
+
+        if (!res.ok) {
+          showToast(json.message || json.error || 'Unable to fetch from live LTA feed');
+        } else if (Array.isArray(json.value) && json.value.length > 0) {
+          const liveMap: Record<string, number> = {};
+          for (const item of json.value) {
+            const devName = (item.Development || '').toLowerCase();
+            const cpId = (item.CarParkID || '').toLowerCase();
+            if (item.AvailableLots !== undefined) {
+              liveMap[cpId] = Number(item.AvailableLots);
+              if (devName) {
+                liveMap[devName] = Number(item.AvailableLots);
+              }
+            }
+          }
+
+          setCarparks((prev) =>
+            prev.map((cp) => {
+              const liveLots =
+                liveMap[cp.carparkNumber.toLowerCase()] ??
+                liveMap[cp.name.toLowerCase()];
+
+              if (liveLots !== undefined) {
+                const total = cp.totalLots || Math.max(liveLots + 20, 100);
+                const occupancy = Math.max(0, Math.min(100, Math.round(((total - liveLots) / total) * 100)));
+                return {
+                  ...cp,
+                  availableLots: liveLots,
+                  occupancyRate: occupancy,
+                  lastUpdated: 'Live LTA DataMall',
+                };
+              }
+              return cp;
+            })
+          );
+          showToast(`Synced ${json.value.length} lots from live LTA DataMall!`);
+          setIsRefreshing(false);
+          return;
+        }
+      } catch {
+        showToast('Live LTA fetch failed. Falling back to local update.');
+      }
+    }
+
+    // Baseline realistic variance update
     setTimeout(() => {
       setCarparks((prev) =>
         prev.map((cp) => {
