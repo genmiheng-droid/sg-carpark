@@ -17,6 +17,7 @@ import {
   X,
   Loader2,
   Key,
+  Check,
 } from 'lucide-react';
 
 interface MapViewProps {
@@ -29,23 +30,43 @@ interface MapViewProps {
   onOpenApiSettings?: () => void;
 }
 
-type TileStyle = 'dark' | 'voyager' | 'osm';
+type TileStyle = 'onemap-night' | 'onemap-default' | 'onemap-grey' | 'onemap-original' | 'osm';
 
-const TILE_CONFIGS: Record<TileStyle, { url: string; attribution: string; name: string }> = {
-  dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
-    name: 'Dark Night',
+const TILE_CONFIGS: Record<TileStyle, { url: string; attribution: string; name: string; maxZoom: number; minZoom: number }> = {
+  'onemap-night': {
+    url: 'https://www.onemap.gov.sg/maps/tiles/Night/{z}/{x}/{y}.png',
+    attribution: '<a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a> &copy; Singapore Land Authority',
+    name: 'OneMap Night (SLA)',
+    maxZoom: 19,
+    minZoom: 11,
   },
-  voyager: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap',
-    name: 'Light Map',
+  'onemap-default': {
+    url: 'https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png',
+    attribution: '<a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a> &copy; Singapore Land Authority',
+    name: 'OneMap Colour (Default)',
+    maxZoom: 19,
+    minZoom: 11,
+  },
+  'onemap-grey': {
+    url: 'https://www.onemap.gov.sg/maps/tiles/Grey/{z}/{x}/{y}.png',
+    attribution: '<a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a> &copy; Singapore Land Authority',
+    name: 'OneMap Grey',
+    maxZoom: 19,
+    minZoom: 11,
+  },
+  'onemap-original': {
+    url: 'https://www.onemap.gov.sg/maps/tiles/Original/{z}/{x}/{y}.png',
+    attribution: '<a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a> &copy; Singapore Land Authority',
+    name: 'OneMap Original',
+    maxZoom: 19,
+    minZoom: 11,
   },
   osm: {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; OpenStreetMap contributors',
-    name: 'Street Standard',
+    name: 'OpenStreetMap',
+    maxZoom: 19,
+    minZoom: 10,
   },
 };
 
@@ -65,8 +86,9 @@ export const MapView: React.FC<MapViewProps> = ({
   const routeLayerRef = useRef<L.LayerGroup | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
-  const [tileStyle, setTileStyle] = useState<TileStyle>('dark');
+  const [tileStyle, setTileStyle] = useState<TileStyle>('onemap-night');
   const [showTileMenu, setShowTileMenu] = useState(false);
+  const [showCarparksOverlay, setShowCarparksOverlay] = useState(true);
 
   // OneMap Route States
   const [activeRoute, setActiveRoute] = useState<OneMapRouteResult | null>(null);
@@ -95,15 +117,19 @@ export const MapView: React.FC<MapViewProps> = ({
     const initialMap = L.map(mapContainerRef.current, {
       center: [activeLocation.coordinates.lat, activeLocation.coordinates.lng],
       zoom: 15,
+      minZoom: 11,
+      maxZoom: 19,
       zoomControl: false,
       fadeAnimation: true,
       trackResize: true,
     });
 
-    const initialTile = L.tileLayer(TILE_CONFIGS[tileStyle].url, {
-      attribution: TILE_CONFIGS[tileStyle].attribution,
-      maxZoom: 19,
-      subdomains: 'abcd',
+    const currentConfig = TILE_CONFIGS[tileStyle];
+    const initialTile = L.tileLayer(currentConfig.url, {
+      attribution: currentConfig.attribution,
+      maxZoom: currentConfig.maxZoom,
+      minZoom: currentConfig.minZoom,
+      detectRetina: false,
     }).addTo(initialMap);
 
     tileLayerRef.current = initialTile;
@@ -152,10 +178,12 @@ export const MapView: React.FC<MapViewProps> = ({
 
     mapInstanceRef.current.removeLayer(tileLayerRef.current);
 
-    const newTile = L.tileLayer(TILE_CONFIGS[tileStyle].url, {
-      attribution: TILE_CONFIGS[tileStyle].attribution,
-      maxZoom: 19,
-      subdomains: 'abcd',
+    const currentConfig = TILE_CONFIGS[tileStyle];
+    const newTile = L.tileLayer(currentConfig.url, {
+      attribution: currentConfig.attribution,
+      maxZoom: currentConfig.maxZoom,
+      minZoom: currentConfig.minZoom,
+      detectRetina: false,
     }).addTo(mapInstanceRef.current);
 
     tileLayerRef.current = newTile;
@@ -257,6 +285,8 @@ export const MapView: React.FC<MapViewProps> = ({
 
     markersLayer.clearLayers();
 
+    if (!showCarparksOverlay) return;
+
     carparks.forEach((cp) => {
       const color = getAvailabilityColor(cp.availableLots, cp.occupancyRate);
       const isSelected = selectedCarpark?.id === cp.id;
@@ -307,7 +337,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
       markersLayer.addLayer(marker);
     });
-  }, [carparks, selectedCarpark, onSelectCarpark]);
+  }, [carparks, selectedCarpark, onSelectCarpark, showCarparksOverlay]);
 
   // Pan when selectedCarpark changes externally
   useEffect(() => {
@@ -465,6 +495,21 @@ export const MapView: React.FC<MapViewProps> = ({
           </button>
         </div>
 
+        {/* Carpark Lots Overlay Quick Toggle */}
+        <button
+          id="btn-toggle-carparks-overlay"
+          type="button"
+          onClick={() => setShowCarparksOverlay(!showCarparksOverlay)}
+          className={`p-2.5 rounded-xl border shadow-lg backdrop-blur-md transition-all cursor-pointer ${
+            showCarparksOverlay
+              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30'
+              : 'bg-slate-900/95 border-slate-700/80 text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+          title={showCarparksOverlay ? 'Hide Carpark Lots Overlay' : 'Show Carpark Lots Overlay'}
+        >
+          <Car className="w-4 h-4" />
+        </button>
+
         {/* Tile Style Layer Toggle */}
         <div className="relative">
           <button
@@ -472,14 +517,18 @@ export const MapView: React.FC<MapViewProps> = ({
             type="button"
             onClick={() => setShowTileMenu(!showTileMenu)}
             className="p-2.5 bg-slate-900/95 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-slate-200 hover:text-white shadow-lg backdrop-blur-md transition-all cursor-pointer"
-            title="Switch Map Theme"
+            title="Switch OneMap Theme"
           >
             <Layers className="w-4 h-4 text-emerald-400" />
           </button>
 
           {showTileMenu && (
-            <div className="absolute right-0 top-full mt-2 w-36 bg-slate-900 border border-slate-700/90 rounded-xl shadow-2xl p-1 z-30 flex flex-col gap-1 text-xs">
-              {(Object.keys(TILE_CONFIGS) as TileStyle[]).map((styleKey) => (
+            <div className="absolute right-0 top-full mt-2 w-56 bg-slate-900/95 border border-slate-700/90 rounded-2xl shadow-2xl p-2 z-30 flex flex-col gap-1 text-xs backdrop-blur-md">
+              <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 flex items-center justify-between">
+                <span>🇸🇬 Singapore OneMap</span>
+                <span className="text-emerald-400 font-bold">SLA</span>
+              </div>
+              {(['onemap-night', 'onemap-default', 'onemap-grey', 'onemap-original'] as TileStyle[]).map((styleKey) => (
                 <button
                   key={styleKey}
                   type="button"
@@ -487,33 +536,87 @@ export const MapView: React.FC<MapViewProps> = ({
                     setTileStyle(styleKey);
                     setShowTileMenu(false);
                   }}
-                  className={`px-2.5 py-1.5 rounded-lg text-left font-medium transition-colors ${
+                  className={`px-2.5 py-1.5 rounded-xl text-left font-medium transition-colors flex items-center justify-between cursor-pointer ${
                     tileStyle === styleKey
-                      ? 'bg-emerald-500/20 text-emerald-400 font-semibold'
+                      ? 'bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30'
                       : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
-                  {TILE_CONFIGS[styleKey].name}
+                  <span>{TILE_CONFIGS[styleKey].name}</span>
+                  {tileStyle === styleKey && <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />}
                 </button>
               ))}
+
+              <div className="px-2 pt-2 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800 mt-1">
+                Global Fallback
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setTileStyle('osm');
+                  setShowTileMenu(false);
+                }}
+                className={`px-2.5 py-1.5 rounded-xl text-left font-medium transition-colors flex items-center justify-between cursor-pointer ${
+                  tileStyle === 'osm'
+                    ? 'bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30'
+                    : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>{TILE_CONFIGS['osm'].name}</span>
+                {tileStyle === 'osm' && <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />}
+              </button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Legend overlay */}
-      <div className="absolute left-3 top-3 z-20 hidden md:flex items-center gap-2.5 px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-[11px] backdrop-blur-md shadow-md">
-        <div className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-          <span className="text-slate-300 font-medium">&gt;30 lots</span>
+      {/* Legend & OneMap status overlay */}
+      <div className="absolute left-3 top-3 z-20 hidden md:flex items-center gap-3 px-3.5 py-2 bg-slate-900/90 border border-slate-800 rounded-2xl text-[11px] backdrop-blur-md shadow-xl">
+        {/* OneMap SLA badge */}
+        <div className="flex items-center gap-1.5 pr-2.5 border-r border-slate-800">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span className="text-white font-bold tracking-tight">🇸🇬 OneMap</span>
+          <span className="text-slate-400 text-[10px] font-medium">(SLA)</span>
         </div>
-        <div className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-          <span className="text-slate-300 font-medium">6–30 lots</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-          <span className="text-slate-300 font-medium">&le;5 lots (Low)</span>
+
+        {/* Quick Style Switcher */}
+        <button
+          type="button"
+          onClick={() => setTileStyle(tileStyle === 'onemap-night' ? 'onemap-default' : 'onemap-night')}
+          className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition-colors cursor-pointer"
+          title="Quick switch between OneMap Night and Colour"
+        >
+          {tileStyle === 'onemap-night' ? '🌙 Night' : '☀️ Colour'}
+        </button>
+
+        {/* Overlay toggle */}
+        <button
+          type="button"
+          onClick={() => setShowCarparksOverlay(!showCarparksOverlay)}
+          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+            showCarparksOverlay
+              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+              : 'bg-slate-800/60 border-slate-700/60 text-slate-400 line-through'
+          }`}
+          title="Toggle Carpark Lots overlay"
+        >
+          Lots Overlay {showCarparksOverlay ? 'ON' : 'OFF'}
+        </button>
+
+        {/* Availability color dots */}
+        <div className="flex items-center gap-2 pl-1 border-l border-slate-800/80">
+          <div className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span className="text-slate-300 font-medium">&gt;30</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span className="text-slate-300 font-medium">6–30</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+            <span className="text-slate-300 font-medium">&le;5</span>
+          </div>
         </div>
       </div>
 
